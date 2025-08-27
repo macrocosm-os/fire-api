@@ -1,0 +1,5 @@
+uvicorn[standard]
+gunicorn
+httpx
+bittensor==9.9.0
+substrate-interface

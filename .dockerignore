@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv
+venv
+env
+
+# OS / editor
+.DS_Store
+.idea
+.vscode
+
+# Git
+.git
+.gitignore
+
+# Tests and tooling caches
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+coverage.xml
+
+# Docker
+Dockerfile*
+docker-compose*
+*.log
+
+
