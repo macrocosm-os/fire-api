@@ -11,6 +11,7 @@ import bittensor as bt
 from types import SimpleNamespace
 from .utils import get_top_miners, generate_header
 from .config import Config as config
+from pydantic import BaseModel
 
 @dataclass
 class BTResources:
@@ -63,17 +64,32 @@ async def _post_to_miner(
     wallet: bt.wallet,
 ) -> tuple[SimpleNamespace, httpx.Response, Exception | None]:
         """Query a single miner using the provided HTTP client."""
+        print(f"Posting to miner: {miner}")
         try:
             headers = await generate_header(
                 wallet.hotkey, body=json.dumps(payload).encode("utf-8"), signed_for=miner.hotkey
             )
+            print(f"{miner.address}/v1/chat/completions")
+            print(f"headers: {headers}")
+            print(f"payload: {payload}")
+            print(f"timeout: {httpx.Timeout(timeout = timeout_seconds)}")
             resp = await client.post(
                 f"{miner.address}/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=timeout_seconds,
+                timeout=httpx.Timeout(timeout = timeout_seconds),
             )
+            
             resp.raise_for_status()
+            print(f"Response: {resp}")
+            print(f"Response text: {resp.text}")
+            # print(f"Response headers: {resp.headers}")
+            # print(f"Response status code: {resp.status_code}")
+            # print(f"Response content: {resp.content}")
+            # print(f"Response content type: {resp.headers.get('content-type')}")
+            # print(f"Response content length: {resp.headers.get('content-length')}")
+            # print(f"Response content encoding: {resp.headers.get('content-encoding')}")
+            # print(f"Response content disposition: {resp.headers.get('content-disposition')}")
             return miner, resp, None
         except Exception as e:
             return miner, None, e
@@ -83,8 +99,8 @@ async def post_to_miners_first(
     miners: list[SimpleNamespace],
     payload: dict[str, Any],
     wallet: bt.wallet,
-    per_request_timeout: float = 2.0,
-    overall_timeout: float = 5.0,
+    per_request_timeout: float = 20.0,
+    overall_timeout: float = 30.0,
 ):
     async with httpx.AsyncClient() as client:
         tasks = [
@@ -96,7 +112,7 @@ async def post_to_miners_first(
         try:
             for coro in asyncio.as_completed(tasks, timeout=overall_timeout):
                 miner, response, error = await coro
-                if response is not None and response.status_code < 400:
+                if response is not None and response.status_code < 400 and "Internal Server Error" not in response.text:
                     # Cancel remaining tasks
                     for t in tasks:
                         if not t.done():
@@ -133,11 +149,16 @@ async def _forward_webhook(webhook_url: str, miner: SimpleNamespace, prompt: str
                 "text": upstream_response.text,
             },
         }
+        print(f"Forwarding webhook to {webhook_url} with payload: {payload}")
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json=payload, timeout=3.0)
     except Exception:
         # Intentionally swallow errors to avoid impacting the main request flow
         pass
+
+
+class CompletionRequest(BaseModel):
+    prompt: str
 
 
 def create_application() -> FastAPI:
@@ -160,21 +181,21 @@ def create_application() -> FastAPI:
     @api_v1.post("/completions", summary="Create a completion (stub)")
     async def create_completion(
         request: Request,
-        prompt: str | None = None,
+        body: CompletionRequest,
         resources: BTResources = Depends(get_resources),
     ) -> Response:
-        if prompt is None:
-            raise HTTPException(status_code=400, detail="Missing 'prompt' in request")
+        prompt = body.prompt
         metagraph = get_metagraph_cached(request.app, resources.subtensor)
-        miners = get_top_miners(metagraph, 5)
+        miners = get_top_miners(metagraph, 300)
 
         # Fan out POST requests to miners and return the first successful response
-        payload = {"prompt": prompt}
+        payload = {"step": "generator", "query": prompt}
         miner, upstream_response = await post_to_miners_first(miners, payload, resources.wallet)
 
         if upstream_response is None:
             raise HTTPException(status_code=502, detail="No miners responded successfully in time")
-
+        print(f"Upstream response: {upstream_response}")
+        print(f"Upstream response text: {upstream_response.text}")
         # Fire-and-forget forward of miner/prompt/response to webhook if configured
         webhook_url: str | None = getattr(request.app.state, "forward_webhook_url", None)
         if webhook_url:
