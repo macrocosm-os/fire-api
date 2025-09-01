@@ -64,32 +64,18 @@ async def _post_to_miner(
     wallet: bt.wallet,
 ) -> tuple[SimpleNamespace, httpx.Response, Exception | None]:
         """Query a single miner using the provided HTTP client."""
-        print(f"Posting to miner: {miner}")
         try:
             headers = await generate_header(
                 wallet.hotkey, body=json.dumps(payload).encode("utf-8"), signed_for=miner.hotkey
             )
-            print(f"{miner.address}/v1/chat/completions")
-            print(f"headers: {headers}")
-            print(f"payload: {payload}")
-            print(f"timeout: {httpx.Timeout(timeout = timeout_seconds)}")
             resp = await client.post(
                 f"{miner.address}/v1/chat/completions",
                 headers=headers,
-                json=payload,
+                content=json.dumps(payload).encode("utf-8"),
                 timeout=httpx.Timeout(timeout = timeout_seconds),
             )
             
             resp.raise_for_status()
-            print(f"Response: {resp}")
-            print(f"Response text: {resp.text}")
-            # print(f"Response headers: {resp.headers}")
-            # print(f"Response status code: {resp.status_code}")
-            # print(f"Response content: {resp.content}")
-            # print(f"Response content type: {resp.headers.get('content-type')}")
-            # print(f"Response content length: {resp.headers.get('content-length')}")
-            # print(f"Response content encoding: {resp.headers.get('content-encoding')}")
-            # print(f"Response content disposition: {resp.headers.get('content-disposition')}")
             return miner, resp, None
         except Exception as e:
             return miner, None, e
@@ -186,7 +172,7 @@ def create_application() -> FastAPI:
     ) -> Response:
         prompt = body.prompt
         metagraph = get_metagraph_cached(request.app, resources.subtensor)
-        miners = get_top_miners(metagraph, 300)
+        miners = get_top_miners(metagraph, 5)
 
         # Fan out POST requests to miners and return the first successful response
         payload = {"step": "generator", "query": prompt}
@@ -217,5 +203,3 @@ if __name__ == "__main__":
     # For local development only. In Docker, use the provided CMD.
     import uvicorn
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-
-
