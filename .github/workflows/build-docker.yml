@@ -1,0 +1,40 @@
+name: Build Docker on main
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}-docker
+  cancel-in-progress: true
+
+jobs:
+  build-docker:
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log into GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login https://ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - uses: FranzDiebold/github-env-vars-action@v2
+
+      - name: Build and push container image to registry
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          file: ./Dockerfile
+          tags: ghcr.io/${{ env.CI_REPOSITORY_OWNER_SLUG }}/${{ env.CI_REPOSITORY_NAME_SLUG }}:branch-main-${{ env.CI_SHA_SHORT }}
+
+
